@@ -1,0 +1,117 @@
+#!/bin/bash
+# Extra Grok / Hermes / Antigravity collectors, then the packaged Omarchy updater.
+# This shadows /usr/share/omarchy/bin/omarchy-agent-usage-update on PATH for
+# terminals. The panel still calls $OMARCHY_PATH/bin; extras refresh via systemd.
+
+set -euo pipefail
+
+LIB="${HOME}/.local/lib/omarchy-extra-agents"
+USAGE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agents/usage"
+STOCK="/usr/bin/omarchy-agent-usage-update"
+ENABLED_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extra-agents/enabled"
+KNOWN=(grok hermes antigravity)
+
+mkdir -p "$USAGE_DIR"
+
+read_enabled() {
+  local id
+  ENABLED=()
+  if [[ -f $ENABLED_FILE ]]; then
+    while read -r id; do
+      [[ -z $id || $id == \#* ]] && continue
+      ENABLED+=("$id")
+    done < "$ENABLED_FILE"
+  else
+    ENABLED=("${KNOWN[@]}")
+  fi
+}
+
+read_enabled
+
+flags=()
+only=()
+extras_only=0
+declare -A excluded
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --force | --limits-only) flags+=("$1") ;;
+  --extras-only) extras_only=1 ;;
+  --except)
+    excluded[$2]=1
+    shift
+    ;;
+  *) only+=("$1") ;;
+  esac
+  shift
+done
+
+is_extra() {
+  local agent="$1" extra
+  for extra in "${KNOWN[@]}"; do
+    [[ $agent == "$extra" ]] && return 0
+  done
+  return 1
+}
+
+wanted() {
+  local agent="$1" extra
+  [[ -n ${excluded[$agent]:-} ]] && return 1
+  local allowed=0
+  for extra in "${ENABLED[@]}"; do
+    [[ $agent == "$extra" ]] && allowed=1
+  done
+  (( allowed )) || return 1
+  (( ${#only[@]} == 0 )) && return 0
+  local candidate
+  for candidate in "${only[@]}"; do
+    [[ $candidate == "$agent" ]] && return 0
+  done
+  return 1
+}
+
+write_extra() {
+  local id="$1"
+  local script="$LIB/${id}.py"
+  local record tmp
+  [[ -f $script ]] || return 0
+  if ! record=$(python3 "$script" "${flags[@]}") || [[ -z $record ]] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<<"$record"; then
+    echo "omarchy-agent-usage-update: $id extra collector failed" >&2
+    return 1
+  fi
+  tmp=$(mktemp "$USAGE_DIR/.$id.XXXXXX")
+  printf '%s\n' "$record" >"$tmp"
+  mv "$tmp" "$USAGE_DIR/$id.json"
+}
+
+extra_status=0
+for id in "${ENABLED[@]}"; do
+  wanted "$id" || continue
+  write_extra "$id" || extra_status=1
+done
+
+stock_args=("${flags[@]}")
+for key in "${!excluded[@]}"; do
+  stock_args+=(--except "$key")
+done
+stock_agents=()
+for agent in "${only[@]}"; do
+  is_extra "$agent" && continue
+  stock_agents+=("$agent")
+done
+stock_args+=("${stock_agents[@]}")
+
+run_stock=1
+if (( extras_only )) || (( ${#only[@]} > 0 && ${#stock_agents[@]} == 0 )); then
+  run_stock=0
+fi
+
+stock_status=0
+if (( run_stock )); then
+  "$STOCK" "${stock_args[@]}" || stock_status=$?
+fi
+
+if (( extra_status != 0 && stock_status == 0 )); then
+  exit "$extra_status"
+fi
+exit "$stock_status"

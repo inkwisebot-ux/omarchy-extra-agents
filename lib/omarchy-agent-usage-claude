@@ -1,0 +1,14 @@
+#!/bin/bash
+# Shorten the stock display name so the agents chip row still fits once
+# extra tabs (Grok, Hermes, Agy, …) are present. The panel reads `name`
+# from the usage JSON as written, so this has to happen on stdout before
+# omarchy-agent-usage-update moves the file into place.
+set -euo pipefail
+/usr/bin/omarchy-agent-usage-claude "$@" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+if isinstance(data, dict) and data.get("name") == "Claude Code":
+    data["name"] = "Claude"
+json.dump(data, sys.stdout, separators=(",", ":"), sort_keys=True)
+sys.stdout.write("\n")
+'

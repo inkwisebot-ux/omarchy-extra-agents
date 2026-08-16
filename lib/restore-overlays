@@ -1,0 +1,62 @@
+#!/bin/bash
+# Re-apply extra-agent tray icons and the Claude display-name shim after
+# an Omarchy package upgrade wipes /usr/share/omarchy.
+set -euo pipefail
+
+DEST_ASSETS=/usr/share/omarchy/shell/plugins/agents/assets
+DEST_BIN=/usr/share/omarchy/bin
+HOOK=/etc/pacman.d/hooks/99-omarchy-extra-agents.hook
+LIBEXEC=/usr/local/libexec/omarchy-extra-agents-restore
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "restore-overlays: need root (pacman hook or pkexec)" >&2
+  exit 1
+fi
+
+install -d -m 755 /usr/local/libexec /etc/pacman.d/hooks
+
+# Stable root-owned copy so the pacman hook does not depend on one home path.
+self=$(readlink -f "$0")
+install -m 755 "$self" "$LIBEXEC"
+
+cat > "$HOOK" << 'HOOK'
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = omarchy
+
+[Action]
+Description = Restoring extra Omarchy agent icons and Claude chip name
+When = PostTransaction
+Exec = /usr/local/libexec/omarchy-extra-agents-restore
+HOOK
+chmod 644 "$HOOK"
+
+shopt -s nullglob
+for lib in /home/*/.local/lib/omarchy-extra-agents; do
+  user_home=$(dirname "$(dirname "$(dirname "$lib")")")
+  enabled_file="$user_home/.config/omarchy/extra-agents/enabled"
+  agents=()
+  if [[ -f $enabled_file ]]; then
+    while read -r id; do
+      [[ -z $id || $id == \#* ]] && continue
+      agents+=("$id")
+    done < "$enabled_file"
+  else
+    agents=(grok hermes antigravity)
+  fi
+  assets="$lib/assets"
+  if [[ -d $DEST_ASSETS && -d $assets ]]; then
+    for id in "${agents[@]}"; do
+      [[ -f $assets/$id.svg ]] && cp -f "$assets/$id.svg" "$DEST_ASSETS/"
+      [[ -f $assets/$id-light.svg ]] && cp -f "$assets/$id-light.svg" "$DEST_ASSETS/"
+      chmod 644 "$DEST_ASSETS/$id.svg" "$DEST_ASSETS/$id-light.svg" 2>/dev/null || true
+    done
+  fi
+  shim="$lib/omarchy-agent-usage-claude"
+  if [[ -x $shim && -d $DEST_BIN ]]; then
+    rm -f "$DEST_BIN/omarchy-agent-usage-claude"
+    cp -f "$shim" "$DEST_BIN/omarchy-agent-usage-claude"
+    chmod 755 "$DEST_BIN/omarchy-agent-usage-claude"
+  fi
+done

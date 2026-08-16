@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh extra Omarchy agent usage when the stock updater runs
+
+[Path]
+PathModified=%h/.local/state/omarchy/agents/usage/claude.json
+PathModified=%h/.local/state/omarchy/agents/usage/codex.json
+Unit=omarchy-extra-agents.service
+
+[Install]
+WantedBy=default.target

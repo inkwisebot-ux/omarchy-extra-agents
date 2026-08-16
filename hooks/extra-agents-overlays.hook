@@ -1,0 +1,14 @@
+#!/bin/bash
+# Fallback if an Omarchy update rewrote /usr/share without the pacman hook.
+set -euo pipefail
+LIB="${HOME}/.local/lib/omarchy-extra-agents"
+ASSETS=/usr/share/omarchy/shell/plugins/agents/assets
+CLAUDE_SHIM=/usr/share/omarchy/bin/omarchy-agent-usage-claude
+need=0
+[[ -f $ASSETS/grok.svg || -f $ASSETS/hermes.svg || -f $ASSETS/antigravity.svg ]] || {
+  [[ -d $LIB/assets ]] && need=1
+}
+[[ -L $CLAUDE_SHIM ]] && need=1
+if (( need )); then
+  pkexec "$LIB/restore-overlays"
+fi
