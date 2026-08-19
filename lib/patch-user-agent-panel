@@ -1,0 +1,50 @@
+#!/usr/bin/python3
+"""Shorten Claude Code in cloned Omarchy agents panels without a data race."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+
+OLD = "text: modelData.providerName"
+NEW = (
+    'text: modelData.providerId === "claude" '
+    '&& modelData.providerName === "Claude Code" '
+    '? "Claude" : modelData.providerName'
+)
+
+
+def cloned_agents_panels() -> list[Path]:
+    root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    plugins = root / "omarchy" / "plugins"
+    panels: list[Path] = []
+    for manifest in plugins.glob("*/manifest.json"):
+        try:
+            data = json.loads(manifest.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (data.get("omarchy") or {}).get("clonedFrom") == "omarchy.agents":
+            panels.append(manifest.with_name("Panel.qml"))
+    return panels
+
+
+def patch(panel: Path) -> bool:
+    try:
+        source = panel.read_text()
+    except OSError:
+        return False
+    if NEW in source:
+        return False
+    if source.count(OLD) != 1:
+        raise SystemExit(f"patch-user-agent-panel: unexpected panel shape: {panel}")
+    temporary = panel.with_name(f".{panel.name}.tmp")
+    temporary.write_text(source.replace(OLD, NEW))
+    temporary.replace(panel)
+    return True
+
+
+for candidate in cloned_agents_panels():
+    if patch(candidate):
+        print(f"Shortened Claude tab in {candidate}")

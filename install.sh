@@ -80,7 +80,7 @@ mkdir -p "$LIB/assets" "$BIN" "$UNIT_DIR" "$CONFIG_DIR"
 
 install -m 755 "$ROOT/lib/grok.py" "$ROOT/lib/hermes.py" "$ROOT/lib/antigravity.py" \
   "$ROOT/lib/omarchy-agent-usage-update" "$ROOT/lib/omarchy-agent-usage-claude" \
-  "$ROOT/lib/restore-overlays" "$LIB/"
+  "$ROOT/lib/patch-user-agent-panel" "$ROOT/lib/restore-overlays" "$LIB/"
 install -m 644 "$ROOT/assets/"*.svg "$LIB/assets/"
 
 install -m 755 "$ROOT/lib/omarchy-agent-usage-update" "$BIN/omarchy-agent-usage-update"
@@ -100,6 +100,10 @@ install -m 644 "$ROOT/systemd/omarchy-extra-agents.path" "$UNIT_DIR/"
 systemctl --user daemon-reload
 systemctl --user enable --now omarchy-extra-agents.timer omarchy-extra-agents.path
 systemctl --user start omarchy-extra-agents.service || true
+
+# Omarchy supports user-owned clones of its agents panel. Patch those at the
+# render point so "Claude Code" never flashes before a later collector run.
+"$LIB/patch-user-agent-panel"
 
 echo "Installed: ${SELECTED[*]}"
 hook_dir="${HOME}/.config/omarchy/hooks/post-update.d"
