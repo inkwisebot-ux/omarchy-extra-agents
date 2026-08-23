@@ -40,3 +40,6 @@ Claude’s chip is shortened to **Claude** so five names still fit the switch ro
 This is not an `omarchy plugin add` package. The agents plugin is first-party and cannot be replaced, so extras are collectors plus tray marks, which is how Omarchy already adds new agents.
 
 Marks belong to xAI, Nous Research, and Google, and are used only to identify those products in the tray.
+The theme-adapted Grok tray marks are based on the 512 px Android icon published
+by [grok.com](https://grok.com/images/android-chrome-512x512.png). See the
+[xAI Brand Guidelines](https://x.ai/legal/brand-guidelines) for the trademark terms governing its use.

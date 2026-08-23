@@ -6,6 +6,7 @@ import argparse
 import base64
 import datetime as dt
 import json
+import math
 import os
 import sys
 import urllib.error
@@ -191,6 +192,36 @@ def client_version() -> str:
         return "1.0.4"
 
 
+def pick_usage_percent(config: dict[str, Any]) -> Any:
+    """Prefer Grok Build, then the unified weekly percent grok.com shows."""
+    products = config.get("productUsage")
+    by_name: dict[str, dict[str, Any]] = {}
+    if isinstance(products, list):
+        for item in products:
+            if isinstance(item, dict):
+                by_name[str(item.get("product") or "").lower()] = item
+    for key in ("grokbuild", "grok-build", "build"):
+        item = by_name.get(key)
+        if item is not None and item.get("usagePercent") is not None:
+            return item.get("usagePercent")
+    chat = by_name.get("grokchat")
+    if chat is not None and chat.get("usagePercent") is not None:
+        return chat.get("usagePercent")
+    return config.get("creditUsagePercent")
+
+
+def percent_to_fraction(percent: Any) -> float | None:
+    # cli-chat-proxy reports 0-100 (1.0 is 1%, matching grok.com). Do not
+    # treat values <= 1 as an already-normalized 0-1 fraction.
+    try:
+        value = float(percent)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return max(0.0, min(1.0, value / 100.0))
+
+
 def http_json(url: str, headers: dict[str, str]) -> tuple[int, Any]:
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
@@ -234,20 +265,8 @@ def probe_billing(entry: dict[str, Any]) -> dict[str, Any]:
         result["help"] = "Grok billing unavailable. Try `grok login` if this persists."
         return result
     config = payload.get("config") if isinstance(payload.get("config"), dict) else payload
-    percent = config.get("creditUsagePercent")
-    if percent is None:
-        products = config.get("productUsage")
-        if isinstance(products, list):
-            for item in products:
-                if isinstance(item, dict) and str(item.get("product") or "").lower() in ("grokbuild", "grok-build", "build"):
-                    percent = item.get("usagePercent")
-                    break
-            if percent is None and products and isinstance(products[0], dict):
-                percent = products[0].get("usagePercent")
-    try:
-        used = max(0.0, min(1.0, float(percent) / (100.0 if float(percent) > 1 else 1.0)))
-    except (TypeError, ValueError):
-        used = None
+    percent = pick_usage_percent(config)
+    used = percent_to_fraction(percent)
     period = config.get("currentPeriod") if isinstance(config.get("currentPeriod"), dict) else {}
     resets = period.get("end") or period.get("resetsAt") or period.get("reset_at")
     if used is not None:
